@@ -386,6 +386,11 @@ public abstract class Calendar
   protected boolean[] isSet = new boolean[FIELD_COUNT];
 
   /**
+   * Keeps a history of the order of the fields set
+   */
+  protected int[] fieldsPriority = new int[FIELD_COUNT];
+
+  /**
    * The time in milliseconds since the epoch.
    * @serial
    */
@@ -445,14 +450,20 @@ public abstract class Calendar
   private int minimalDaysInFirstWeek;
 
   /**
-   * Keeps a history of the order of the fields set
+   * The field is not set.
    */
-  int[] fieldsPriority = new int[FIELD_COUNT];
+  protected static final int UNSET = 0;
 
   /**
-   * The value to store in fieldsPriority for the next field setting
+   * First valid priority value.
    */
-  private int lastPriority = 0;
+  protected static final int MINIMUM_PRIORITY = 1;
+
+  /**
+   * The value that will be stored in fieldsPriority on the next field
+   * setting
+   */
+  private int nextPriority = MINIMUM_PRIORITY;
 
   /**
    * The version of the serialized data on the stream.
@@ -795,60 +806,55 @@ public abstract class Calendar
    */
   public void set(int field, int value)
   {
-    fieldsPriority[field] = ++lastPriority;
-
     if (isTimeSet)
-      for (int i = 0; i < FIELD_COUNT; i++)
-        isSet[i] = false;
+      {
+        for (int i = 0; i < FIELD_COUNT; i++)
+          isSet[i] = false;
+      }
+
     isTimeSet = false;
     fields[field] = value;
     isSet[field] = true;
+    fieldsPriority[field] = nextPriority++;
+    if (nextPriority == Integer.MAX_VALUE)
+      rescalePriorities();
   }
 
   /**
-   * Sets the fields for year, month, and date
+   * Sets the fields for year, month, and date.
    * @param year the year.
-   * @param month the month, one of the constants JANUARY..UNDICEMBER.
-   * @param date the day of the month
+   * @param month the month, one of the constants JANUARY..UNDECIMBER.
+   * @param date the day of the month.
    */
   public final void set(int year, int month, int date)
   {
-    isTimeSet = false;
-    fields[YEAR] = year;
-    fields[MONTH] = month;
-    fields[DATE] = date;
-    isSet[YEAR] = isSet[MONTH] = isSet[DATE] = true;
-    isSet[WEEK_OF_YEAR] = false;
-    isSet[DAY_OF_YEAR] = false;
-    isSet[WEEK_OF_MONTH] = false;
-    isSet[DAY_OF_WEEK] = false;
-    isSet[DAY_OF_WEEK_IN_MONTH] = false;
-    isSet[ERA] = false;
+    set(YEAR, year);
+    set(MONTH, month);
+    set(DATE, date);
   }
 
   /**
-   * Sets the fields for year, month, date, hour, and minute
+   * Sets the fields for year, month, date, hour, and minute.
    * @param year the year.
-   * @param month the month, one of the constants JANUARY..UNDICEMBER.
-   * @param date the day of the month
+   * @param month the month, one of the constants JANUARY..UNDECIMBER.
+   * @param date the day of the month.
    * @param hour the hour of day.
    * @param minute the minute.
    */
   public final void set(int year, int month, int date, int hour, int minute)
   {
-    set(year, month, date);
-    fields[HOUR_OF_DAY] = hour;
-    fields[MINUTE] = minute;
-    isSet[HOUR_OF_DAY] = isSet[MINUTE] = true;
-    isSet[AM_PM] = false;
-    isSet[HOUR] = false;
+    set(YEAR, year);
+    set(MONTH, month);
+    set(DATE, date);
+    set(HOUR_OF_DAY, hour);
+    set(MINUTE, minute);
   }
 
   /**
-   * Sets the fields for year, month, date, hour, and minute
+   * Sets the fields for year, month, date, hour, and minute.
    * @param year the year.
-   * @param month the month, one of the constants JANUARY..UNDICEMBER.
-   * @param date the day of the month
+   * @param month the month, one of the constants JANUARY..UNDECIMBER.
+   * @param date the day of the month.
    * @param hour the hour of day.
    * @param minute the minute.
    * @param second the second.
@@ -856,9 +862,12 @@ public abstract class Calendar
   public final void set(int year, int month, int date, int hour, int minute,
                         int second)
   {
-    set(year, month, date, hour, minute);
-    fields[SECOND] = second;
-    isSet[SECOND] = true;
+    set(YEAR, year);
+    set(MONTH, month);
+    set(DATE, date);
+    set(HOUR_OF_DAY, hour);
+    set(MINUTE, minute);
+    set(SECOND, second);
   }
 
   /**
@@ -875,11 +884,12 @@ public abstract class Calendar
                          0, 0, zoneOffs, 0
                        };
     fields = tempFields;
-    for (int i = 0; i < FIELD_COUNT; i++) {
-      isSet[i] = false;
-      fieldsPriority[i] = 0;
-    }
-    lastPriority = 0;
+    for (int i = 0; i < FIELD_COUNT; i++)
+      {
+        isSet[i] = false;
+        fieldsPriority[i] = UNSET;
+      }
+    nextPriority = MINIMUM_PRIORITY;
   }
 
   /**
@@ -901,7 +911,7 @@ public abstract class Calendar
     areFieldsSet = false;
     isSet[field] = false;
     fields[field] = tempFields[field];
-    fieldsPriority[field] = 0;
+    fieldsPriority[field] = UNSET;
   }
 
   /**
@@ -925,6 +935,43 @@ public abstract class Calendar
       computeTime();
     if (! areFieldsSet)
       computeFields();
+  }
+
+  /**
+   * Rescale the current priorities of every set field (!= {@link #UNSET}). The
+   * oldest set field priority will be {@link #MINIMUM_PRIORITY}.
+   */
+  private void rescalePriorities()
+  {
+    int newPriority = MINIMUM_PRIORITY;
+    int max = MINIMUM_PRIORITY;
+
+    for (;;)
+      {
+        int min = Integer.MAX_VALUE;
+        for (int p : fieldsPriority)
+          {
+            if (p >= newPriority && min > p)
+              min = p;
+
+            if  (max < p)
+              max = p;
+          }
+
+        if (min != max && min == Integer.MAX_VALUE)
+          break;
+
+        for (int i = 0; i < fieldsPriority.length; i++)
+          {
+            if (fieldsPriority[i] == min)
+              fieldsPriority[i] = newPriority;
+          }
+        newPriority++;
+
+        if (min == max)
+          break;
+      }
+    nextPriority = newPriority;
   }
 
   /**
@@ -1248,8 +1295,9 @@ public abstract class Calendar
     try
       {
         Calendar cal = (Calendar) super.clone();
-        cal.fields = (int[]) fields.clone();
-        cal.isSet = (boolean[]) isSet.clone();
+        cal.fields = fields.clone();
+        cal.isSet = isSet.clone();
+        cal.fieldsPriority = fieldsPriority.clone();
         return cal;
       }
     catch (CloneNotSupportedException ex)

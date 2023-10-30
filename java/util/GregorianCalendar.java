@@ -516,98 +516,40 @@ public class GregorianCalendar extends Calendar
     // 2  YEAR + MONTH + WEEK_OF_MONTH + DAY_OF_WEEK
     // 3  YEAR + MONTH + DAY_OF_WEEK_IN_MONTH + DAY_OF_WEEK
     // 4  YEAR + DAY_OF_YEAR
-    // 5  YEAR + DAY_OF_WEEK + WEEK_OF_YEAR
+    // 5  YEAR + WEEK_OF_YEAR + DAY_OF_WEEK
 
-    int best = 0;
+    int best = domP;
+    int maxDowPatternP = Math.max(Math.max(womP, dowimP), woyP);
 
-    final boolean complete1 = isSet[DAY_OF_MONTH];
-    final boolean complete2 = isSet[WEEK_OF_MONTH] && isSet[DAY_OF_WEEK];
-    final boolean complete3 = isSet[DAY_OF_WEEK_IN_MONTH] && isSet[DAY_OF_WEEK];
-    final boolean complete4 = isSet[DAY_OF_YEAR];
-    final boolean complete5 = isSet[DAY_OF_WEEK] && isSet[WEEK_OF_YEAR];
-
-    // Complete patterns have priority
-    if (complete1 || complete2 || complete3 || complete4 || complete5)
+    if (doyP > best)
+      best = doyP;
+    if (dowP != UNSET)
       {
-        if (domP > best && complete1)
-          best = domP;
+        if (maxDowPatternP > best)
+          best = maxDowPatternP;
 
-        if (womP > best && complete2)
-          best = womP;
-
-        if (dowimP > best && complete3)
-          best = dowimP;
-
-        if (doyP > best && complete4)
-          best = doyP;
-
-        if (woyP > best && complete5)
-          best = woyP;
-
-        // DAY OF WEEK is used in patterns 2, 3 and 5, resolve which one is best
-        if (dowP > best && (complete2 || complete3 || complete5))
+        if (maxDowPatternP != UNSET && dowP > best)
           {
-            int aux = dowP;
-            if (womP > dowimP && womP > woyP) // Pattern 2
-              aux = womP;
-
-            if (dowimP > womP && dowimP > woyP) // Pattern 3
-              aux = dowimP;
-
-            if (woyP > womP && woyP > dowimP) // Pattern 5
-              aux = woyP;
-
-            if (aux == womP)
-              womP = dowP;
-            else if (aux == dowimP)
-              dowimP = dowP;
-            else if (aux == woyP)
-              woyP = dowP;
-
             best = dowP;
+
+            if (maxDowPatternP == womP)
+              womP = dowP;
+            else if (maxDowPatternP == dowimP)
+              dowimP = dowP;
+            else // woyP is the greatest
+              woyP = dowP;
           }
       }
-    else
+
+    // We don't have a complete pattern
+    if (best == UNSET)
       {
-        if (domP > best)
-          best = domP;
+        best = maxDowPatternP;
 
-        if (womP > best)
-          best = womP;
-
-        if (dowimP > best)
-          best = dowimP;
-
-        if (doyP > best)
-          best = doyP;
-
-        if (woyP > best)
-          best = woyP;
-
-        // DAY OF WEEK is used in patterns 2, 3 and 5, resolve which one is best
-        if (dowP > best)
+        if (dowP != UNSET)
           {
-            int aux = dowP;
-            if (womP > dowimP && womP > woyP) // Pattern 2
-              aux = womP;
-
-            if (dowimP > womP && dowimP > woyP) // Pattern 3
-              aux = dowimP;
-
-            if (woyP > womP && woyP > dowimP) // Pattern 5
-              aux = woyP;
-
-            if (aux == dowP) // If there is not a best choice pick arbitrarily
-              aux = dowimP; // Pattern 3 to match openjdk (?)
-
-            if (aux == womP)
-              womP = dowP;
-            else if (aux == dowimP)
-              dowimP = dowP;
-            else if (aux == woyP)
-              woyP = dowP;
-
-            best = dowP;
+            // At this point
+            best = dowimP = dowP;
           }
       }
 
@@ -1022,7 +964,12 @@ public class GregorianCalendar extends Calendar
     fields[SECOND] = millisInDay / (1000);
     fields[MILLISECOND] = millisInDay % 1000;
 
-    areFieldsSet = isSet[ERA] = isSet[YEAR] = isSet[MONTH] = isSet[WEEK_OF_YEAR] = isSet[WEEK_OF_MONTH] = isSet[DAY_OF_MONTH] = isSet[DAY_OF_YEAR] = isSet[DAY_OF_WEEK] = isSet[DAY_OF_WEEK_IN_MONTH] = isSet[AM_PM] = isSet[HOUR] = isSet[HOUR_OF_DAY] = isSet[MINUTE] = isSet[SECOND] = isSet[MILLISECOND] = isSet[ZONE_OFFSET] = isSet[DST_OFFSET] = true;
+    for (int i = 0; i < FIELD_COUNT; i++)
+      {
+        isSet[i] = true;
+        fieldsPriority[i] = MINIMUM_PRIORITY;
+      }
+    areFieldsSet = true;
   }
 
   /**

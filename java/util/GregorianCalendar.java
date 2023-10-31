@@ -504,6 +504,114 @@ public class GregorianCalendar extends Calendar
    */
   protected synchronized void computeTime()
   {
+    int domP = fieldsPriority[DAY_OF_MONTH];
+    int womP = fieldsPriority[WEEK_OF_MONTH];
+    int dowP = fieldsPriority[DAY_OF_WEEK];
+    int dowimP = fieldsPriority[DAY_OF_WEEK_IN_MONTH];
+    int doyP = fieldsPriority[DAY_OF_YEAR];
+    int woyP = fieldsPriority[WEEK_OF_YEAR];
+
+    // The five patterns are:
+    // 1  YEAR + MONTH + DAY_OF_MONTH
+    // 2  YEAR + MONTH + WEEK_OF_MONTH + DAY_OF_WEEK
+    // 3  YEAR + MONTH + DAY_OF_WEEK_IN_MONTH + DAY_OF_WEEK
+    // 4  YEAR + DAY_OF_YEAR
+    // 5  YEAR + DAY_OF_WEEK + WEEK_OF_YEAR
+
+    int best = 0;
+
+    final boolean complete1 = isSet[DAY_OF_MONTH];
+    final boolean complete2 = isSet[WEEK_OF_MONTH] && isSet[DAY_OF_WEEK];
+    final boolean complete3 = isSet[DAY_OF_WEEK_IN_MONTH] && isSet[DAY_OF_WEEK];
+    final boolean complete4 = isSet[DAY_OF_YEAR];
+    final boolean complete5 = isSet[DAY_OF_WEEK] && isSet[WEEK_OF_YEAR];
+
+    // Complete patterns have priority
+    if (complete1 || complete2 || complete3 || complete4 || complete5)
+      {
+        if (domP > best && complete1)
+          best = domP;
+
+        if (womP > best && complete2)
+          best = womP;
+
+        if (dowimP > best && complete3)
+          best = dowimP;
+
+        if (doyP > best && complete4)
+          best = doyP;
+
+        if (woyP > best && complete5)
+          best = woyP;
+
+        // DAY OF WEEK is used in patterns 2, 3 and 5, resolve which one is best
+        if (dowP > best && (complete2 || complete3 || complete5))
+          {
+            int aux = dowP;
+            if (womP > dowimP && womP > woyP) // Pattern 2
+              aux = womP;
+
+            if (dowimP > womP && dowimP > woyP) // Pattern 3
+              aux = dowimP;
+
+            if (woyP > womP && woyP > dowimP) // Pattern 5
+              aux = woyP;
+
+            if (aux == womP)
+              womP = dowP;
+            else if (aux == dowimP)
+              dowimP = dowP;
+            else if (aux == woyP)
+              woyP = dowP;
+
+            best = dowP;
+          }
+      }
+    else
+      {
+        if (domP > best)
+          best = domP;
+
+        if (womP > best)
+          best = womP;
+
+        if (dowimP > best)
+          best = dowimP;
+
+        if (doyP > best)
+          best = doyP;
+
+        if (woyP > best)
+          best = woyP;
+
+        // DAY OF WEEK is used in patterns 2, 3 and 5, resolve which one is best
+        if (dowP > best)
+          {
+            int aux = dowP;
+            if (womP > dowimP && womP > woyP) // Pattern 2
+              aux = womP;
+
+            if (dowimP > womP && dowimP > woyP) // Pattern 3
+              aux = dowimP;
+
+            if (woyP > womP && woyP > dowimP) // Pattern 5
+              aux = woyP;
+
+            if (aux == dowP) // If there is not a best choice pick arbitrarily
+              aux = dowimP; // Pattern 3 to match openjdk (?)
+
+            if (aux == womP)
+              womP = dowP;
+            else if (aux == dowimP)
+              dowimP = dowP;
+            else if (aux == woyP)
+              woyP = dowP;
+
+            best = dowP;
+          }
+      }
+
+    // From here best is immutable
     int millisInDay = 0;
     int era = fields[ERA];
     int year = fields[YEAR];
@@ -515,93 +623,98 @@ public class GregorianCalendar extends Calendar
     int millis = fields[MILLISECOND];
     int[] month_days = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
     int[] dayCount = { 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334 };
-    int hour = 0;
+    int hour;
 
     if (! isLenient())
       nonLeniencyCheck();
 
-    if (! isSet[MONTH] && (! isSet[DAY_OF_WEEK] || isSet[WEEK_OF_YEAR]))
+    // This section has to set a valid, normalized, year, month and day
+    if (best == domP) // 1  YEAR + MONTH + DAY_OF_MONTH
       {
-        // 5: YEAR + DAY_OF_WEEK + WEEK_OF_YEAR
-        if (isSet[WEEK_OF_YEAR])
+        year = fields[YEAR];
+        month = fields[MONTH];
+        day = fields[DAY_OF_MONTH];
+      }
+    else if (best == womP) // 2  YEAR + MONTH + WEEK_OF_MONTH + DAY_OF_WEEK
+      {
+        year = fields[YEAR];
+        month = fields[MONTH];
+        int firstw = getFirstDayOfWeek();
+        int firstm = getFirstDayOfMonth(year, month) - firstw; // fdom relative to fdow
+        if (firstm < 0)
+          firstm += 7;
+        int doffs = isSet[DAY_OF_WEEK] ? fields[DAY_OF_WEEK] - firstw : 0;
+        if (doffs < 0)
+          doffs += 7;
+        doffs -= firstm;
+        int woffs = fields[WEEK_OF_MONTH] - 1;
+        int difw = firstw - getFirstDayOfMonth(year, month);
+        if (difw <= 0)
+          difw += 7;
+        if (difw < getMinimalDaysInFirstWeek())
+          woffs++;
+        day = 1 + 7 * woffs + doffs;
+      }
+    else if (best == dowimP) // 3  YEAR + MONTH + DAY_OF_WEEK_IN_MONTH + DAY_OF_WEEK
+      {
+        year = fields[YEAR];
+        month = fields[MONTH];
+        int doffs = isSet[DAY_OF_WEEK]
+                ? fields[DAY_OF_WEEK] - getFirstDayOfMonth(year, month)
+                : getFirstDayOfWeek() - getFirstDayOfMonth(year, month);
+        if (doffs < 0)
+          doffs += 7;
+        int woffs;
+        int weeks = (int) Math.ceil(month_days[month] / 7.0);
+        if (fields[DAY_OF_WEEK_IN_MONTH] == 0) // special case: last week from the preceding month
           {
-            int first = getFirstDayOfMonth(year, 0);
-            int offs = 1;
-            int daysInFirstWeek = getFirstDayOfWeek() - first;
-            if (daysInFirstWeek <= 0)
-              daysInFirstWeek += 7;
-
-            if (daysInFirstWeek < getMinimalDaysInFirstWeek())
-              offs += daysInFirstWeek;
-            else
-              offs -= 7 - daysInFirstWeek;
-            month = 0;
-            day = offs + 7 * (fields[WEEK_OF_YEAR] - 1);
-            offs = fields[DAY_OF_WEEK] - getFirstDayOfWeek();
-
-            if (offs < 0)
-              offs += 7;
-            day += offs;
+            woffs = -1;
           }
         else
           {
-            // 4:  YEAR + DAY_OF_YEAR
-            month = 0;
-            day = fields[DAY_OF_YEAR];
+            woffs = fields[DAY_OF_WEEK_IN_MONTH] % weeks;
+            woffs--;
+            if (woffs < 0)
+              woffs += weeks;
           }
+        day = 1 + 7 * woffs + doffs;
       }
-    else
+    else if (best == doyP) // 4  YEAR + DAY_OF_YEAR
       {
-        if (isSet[DAY_OF_WEEK])
-          {
-            int first = getFirstDayOfMonth(year, month);
-
-            // 3: YEAR + MONTH + DAY_OF_WEEK_IN_MONTH + DAY_OF_WEEK
-            if (isSet[DAY_OF_WEEK_IN_MONTH])
-              {
-                if (fields[DAY_OF_WEEK_IN_MONTH] < 0)
-                  {
-                    month++;
-                    first = getFirstDayOfMonth(year, month);
-                    day = 1 + 7 * (fields[DAY_OF_WEEK_IN_MONTH]);
-                  }
-                else
-                  day = 1 + 7 * (fields[DAY_OF_WEEK_IN_MONTH] - 1);
-
-                int offs = fields[DAY_OF_WEEK] - first;
-                if (offs < 0)
-                  offs += 7;
-                day += offs;
-              }
-            else
-              { // 2: YEAR + MONTH + WEEK_OF_MONTH + DAY_OF_WEEK
-                int offs = 1;
-                int daysInFirstWeek = getFirstDayOfWeek() - first;
-                if (daysInFirstWeek <= 0)
-                  daysInFirstWeek += 7;
-
-                if (daysInFirstWeek < getMinimalDaysInFirstWeek())
-                  offs += daysInFirstWeek;
-                else
-                  offs -= 7 - daysInFirstWeek;
-
-                day = offs + 7 * (fields[WEEK_OF_MONTH] - 1);
-                offs = fields[DAY_OF_WEEK] - getFirstDayOfWeek();
-                if (offs < 0)
-                  offs += 7;
-                day += offs;
-              }
-          }
-
-        // 1:  YEAR + MONTH + DAY_OF_MONTH
+        year = fields[YEAR];
+        month = 0;
+        day = fields[DAY_OF_YEAR];
       }
+    else if (best == woyP) // 5: YEAR + DAY_OF_WEEK + WEEK_OF_YEAR
+      {
+        year = fields[YEAR];
+        month = 0;
+        int firstw = getFirstDayOfWeek();
+        int firstm = getFirstDayOfMonth(year, month) - firstw;
+        if (firstm < 0)
+          firstm += 7;
+        // from first day of week to DAY_OF_WEEK
+        int doffs = isSet[DAY_OF_WEEK]? fields[DAY_OF_WEEK] - firstw: 0;
+        if (doffs < 0)
+          doffs += 7;
+        doffs -= firstm;
+        int woffs = fields[WEEK_OF_YEAR] - 1;
+        int difw = firstw - getFirstDayOfMonth(year, month);
+        if (difw <= 0)
+          difw += 7;
+        if (difw < getMinimalDaysInFirstWeek())
+          woffs++;
+        day = 1 + 7 * woffs + doffs;
+      }
+
     if (era == BC && year > 0)
       year = 1 - year;
 
     // rest of code assumes day/month/year set
     // should negative BC years be AD?
     // get the hour (but no check for validity)
-    if (isSet[HOUR])
+    if (fieldsPriority[AM_PM] > fieldsPriority[HOUR_OF_DAY] && isSet[HOUR] ||
+            fieldsPriority[HOUR] > fieldsPriority[HOUR_OF_DAY] && isSet[AM_PM])
       {
         hour = fields[HOUR];
         if (fields[AM_PM] == PM)

@@ -445,11 +445,14 @@ public abstract class Calendar
   private int minimalDaysInFirstWeek;
 
   /**
-   * Is set to true if DST_OFFSET is explicitly set. In that case
-   * it's value overrides the value computed from the current
-   * time and the timezone.
+   * Keeps a history of the order of the fields set
    */
-  private boolean explicitDSTOffset = false;
+  int[] fieldsPriority = new int[FIELD_COUNT];
+
+  /**
+   * The value to store in fieldsPriority for the next field setting
+   */
+  private int lastPriority = 0;
 
   /**
    * The version of the serialized data on the stream.
@@ -792,95 +795,14 @@ public abstract class Calendar
    */
   public void set(int field, int value)
   {
+    fieldsPriority[field] = ++lastPriority;
+
     if (isTimeSet)
       for (int i = 0; i < FIELD_COUNT; i++)
         isSet[i] = false;
     isTimeSet = false;
     fields[field] = value;
     isSet[field] = true;
-
-    // The five valid date patterns, in order of priority
-    // 1  YEAR + MONTH + DAY_OF_MONTH
-    // 2  YEAR + MONTH + WEEK_OF_MONTH + DAY_OF_WEEK
-    // 3  YEAR + MONTH + DAY_OF_WEEK_IN_MONTH + DAY_OF_WEEK
-    // 4  YEAR + DAY_OF_YEAR
-    // 5  YEAR + DAY_OF_WEEK + WEEK_OF_YEAR
-    switch (field)
-      {
-      case MONTH: // pattern 1,2 or 3
-        isSet[DAY_OF_YEAR] = false;
-        isSet[WEEK_OF_YEAR] = false;
-        break;
-      case DAY_OF_MONTH: // pattern 1
-        isSet[YEAR] = true;
-        isSet[MONTH] = true;
-        isSet[WEEK_OF_MONTH] = true;
-        isSet[DAY_OF_WEEK] = false;
-        isSet[DAY_OF_WEEK_IN_MONTH] = false;
-        isSet[DAY_OF_YEAR] = false;
-        isSet[WEEK_OF_YEAR] = false;
-        break;
-      case WEEK_OF_MONTH: // pattern 2
-        if (! isSet[DAY_OF_WEEK])
-          fields[DAY_OF_WEEK] = getFirstDayOfWeek();
-        isSet[YEAR] = true;
-        isSet[MONTH] = true;
-        isSet[DAY_OF_WEEK] = true;
-        isSet[DAY_OF_MONTH] = false;
-        isSet[DAY_OF_WEEK_IN_MONTH] = false;
-        isSet[DAY_OF_YEAR] = false;
-        isSet[WEEK_OF_YEAR] = false;
-        break;
-      case DAY_OF_WEEK_IN_MONTH: // pattern 3
-        if (! isSet[DAY_OF_WEEK])
-          fields[DAY_OF_WEEK] = getFirstDayOfWeek();
-        isSet[YEAR] = true;
-        isSet[MONTH] = true;
-        isSet[DAY_OF_WEEK] = true;
-        isSet[DAY_OF_YEAR] = false;
-        isSet[DAY_OF_MONTH] = false;
-        isSet[WEEK_OF_MONTH] = false;
-        isSet[WEEK_OF_YEAR] = false;
-        break;
-      case DAY_OF_YEAR: // pattern 4
-        isSet[YEAR] = true;
-        isSet[MONTH] = false;
-        isSet[WEEK_OF_MONTH] = false;
-        isSet[DAY_OF_MONTH] = false;
-        isSet[DAY_OF_WEEK] = false;
-        isSet[WEEK_OF_YEAR] = false;
-        isSet[DAY_OF_WEEK_IN_MONTH] = false;
-        break;
-      case WEEK_OF_YEAR: // pattern 5
-        if (! isSet[DAY_OF_WEEK])
-          fields[DAY_OF_WEEK] = getFirstDayOfWeek();
-        isSet[YEAR] = true;
-        isSet[DAY_OF_WEEK] = true;
-        isSet[MONTH] = false;
-        isSet[DAY_OF_MONTH] = false;
-        isSet[WEEK_OF_MONTH] = false;
-        isSet[DAY_OF_YEAR] = false;
-        isSet[DAY_OF_WEEK_IN_MONTH] = false;
-        break;
-      case AM_PM:
-        isSet[HOUR] = true;
-        isSet[HOUR_OF_DAY] = false;
-        break;
-      case HOUR_OF_DAY:
-        isSet[AM_PM] = false;
-        isSet[HOUR] = false;
-        break;
-      case HOUR:
-        isSet[AM_PM] = true;
-        isSet[HOUR_OF_DAY] = false;
-        break;
-      case DST_OFFSET:
-        explicitDSTOffset = true;
-      }
-
-    // May have crossed over a DST boundary.
-    if (! explicitDSTOffset && (field != DST_OFFSET && field != ZONE_OFFSET))
-      isSet[DST_OFFSET] = false;
   }
 
   /**
@@ -902,9 +824,6 @@ public abstract class Calendar
     isSet[DAY_OF_WEEK] = false;
     isSet[DAY_OF_WEEK_IN_MONTH] = false;
     isSet[ERA] = false;
-
-    if (! explicitDSTOffset)
-      isSet[DST_OFFSET] = false; // May have crossed a DST boundary.
   }
 
   /**
@@ -956,8 +875,11 @@ public abstract class Calendar
                          0, 0, zoneOffs, 0
                        };
     fields = tempFields;
-    for (int i = 0; i < FIELD_COUNT; i++)
+    for (int i = 0; i < FIELD_COUNT; i++) {
       isSet[i] = false;
+      fieldsPriority[i] = 0;
+    }
+    lastPriority = 0;
   }
 
   /**
@@ -979,6 +901,7 @@ public abstract class Calendar
     areFieldsSet = false;
     isSet[field] = false;
     fields[field] = tempFields[field];
+    fieldsPriority[field] = 0;
   }
 
   /**
